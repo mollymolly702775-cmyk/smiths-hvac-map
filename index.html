@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Technician Map — Smiths HVAC</title>
+
+  <!--
+  ╔══════════════════════════════════════════════════════════════╗
+  ║  SMITHS HVAC — TECHNICIAN MAP  v6                            ║
+  ║  Stack: Leaflet.js + OpenStreetMap (zero API keys needed)    ║
+  ║  Geocoding: Nominatim (free, no account required)            ║
+  ╠══════════════════════════════════════════════════════════════╣
+  ║  SETUP: Only 1 thing to fill in before deploying:            ║
+  ║  → PASTE_YOUR_ACCESS_TOKEN_HERE in CONFIG below              ║
+  ╚══════════════════════════════════════════════════════════════╝
+  -->
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a1628; color: #f1f5f9; display: flex; flex-direction: column; height: 100vh; }
+
+    #topbar { background: #0f1b2d; padding: 9px 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); flex-shrink: 0; gap: 12px; flex-wrap: wrap; }
+    #topbar-title { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #f8fafc; white-space: nowrap; }
+    #topbar-date  { font-size: 10px; color: #64748b; white-space: nowrap; }
+    #topbar-stats { display: flex; gap: 16px; }
+    .tstat { text-align: center; }
+    .tstat-val { font-size: 15px; font-weight: 700; line-height: 1; }
+    .tstat-lbl { font-size: 9px; color: #475569; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 1px; }
+    .c-dispatched { color: #fb923c; }
+    .c-inprogress { color: #60a5fa; }
+    .c-completed  { color: #4ade80; }
+    #refresh-btn { background: #1d4ed8; border: none; color: #fff; padding: 5px 12px; border-radius: 5px; font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+    #refresh-btn:hover { background: #2563eb; }
+    #refresh-btn:disabled { background: #1e3a5f; color: #475569; cursor: default; }
+
+    #main { display: flex; flex: 1; overflow: hidden; position: relative; }
+    #map  { flex: 1; height: 100%; z-index: 1; }
+
+    .leaflet-tile { filter: brightness(0.85) saturate(0.6) hue-rotate(180deg) invert(1); }
+    .leaflet-container { background: #0f1b2d; }
+
+    #sidebar { width: 268px; flex-shrink: 0; background: #111e33; border-left: 1px solid rgba(255,255,255,0.07); display: flex; flex-direction: column; overflow: hidden; z-index: 2; }
+    #sb-header { padding: 10px 14px; font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #475569; border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
+    #sb-list { flex: 1; overflow-y: auto; }
+    #sb-list::-webkit-scrollbar { width: 4px; }
+    #sb-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
+
+    .tech-card { border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .tech-hdr  { padding: 10px 12px; display: flex; align-items: center; gap: 9px; cursor: pointer; user-select: none; }
+    .tech-hdr:hover { background: rgba(255,255,255,0.03); }
+    .tech-avatar  { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; flex-shrink: 0; }
+    .tech-name    { font-size: 12px; font-weight: 600; color: #f1f5f9; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tech-count   { font-size: 10px; color: #475569; white-space: nowrap; }
+    .tech-chevron { font-size: 10px; color: #475569; transition: transform 0.2s; flex-shrink: 0; }
+    .tech-card.open .tech-chevron { transform: rotate(180deg); }
+    .tech-jobs { display: none; padding: 4px 10px 10px; }
+    .tech-card.open .tech-jobs { display: block; }
+
+    .job-row { background: rgba(255,255,255,0.04); border-radius: 6px; padding: 8px 10px; margin-bottom: 5px; border-left: 3px solid #334155; cursor: pointer; transition: background 0.12s; }
+    .job-row:hover { background: rgba(255,255,255,0.08); }
+    .job-row.s-dispatched { border-left-color: #fb923c; }
+    .job-row.s-inprogress { border-left-color: #60a5fa; }
+    .job-row.s-completed  { border-left-color: #4ade80; }
+    .job-row.s-scheduled  { border-left-color: #facc15; }
+    .job-title { font-size: 11px; font-weight: 600; color: #f1f5f9; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .job-cust  { font-size: 10px; color: #64748b; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .job-addr  { font-size: 9px; color: #475569; margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .badge { font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 8px; text-transform: uppercase; letter-spacing: 0.04em; display: inline-block; }
+    .b-dispatched { background: rgba(251,146,60,0.15);  color: #fb923c; }
+    .b-inprogress { background: rgba(96,165,250,0.15);  color: #60a5fa; }
+    .b-completed  { background: rgba(74,222,128,0.15);  color: #4ade80; }
+    .b-scheduled  { background: rgba(250,204,21,0.15);  color: #facc15; }
+
+    #sb-legend { flex-shrink: 0; padding: 9px 14px; border-top: 1px solid rgba(255,255,255,0.06); display: flex; flex-wrap: wrap; gap: 8px; }
+    .leg-item { display: flex; align-items: center; gap: 4px; font-size: 9px; color: #64748b; }
+    .leg-dot  { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+    #loading-overlay { position: absolute; inset: 0; background: rgba(10,22,40,0.88); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; z-index: 999; }
+    .spinner { width: 32px; height: 32px; border: 3px solid rgba(255,255,255,0.1); border-top-color: #3b82f6; border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading-text { font-size: 12px; color: #64748b; }
+    #error-banner { display: none; position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: #450a0a; border: 1px solid #7f1d1d; color: #fca5a5; font-size: 11px; padding: 8px 16px; border-radius: 6px; z-index: 1000; white-space: nowrap; }
+    .empty-msg { padding: 24px; text-align: center; color: #475569; font-size: 12px; }
+
+    .leaflet-popup-content-wrapper { background: #1a2d45 !important; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px !important; box-shadow: 0 4px 20px rgba(0,0,0,0.5) !important; }
+    .leaflet-popup-tip { background: #1a2d45 !important; }
+    .leaflet-popup-content { margin: 10px 14px !important; color: #f8fafc; }
+    .pop-title { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+    .pop-cust  { font-size: 11px; color: #94a3b8; margin-bottom: 5px; }
+    .pop-tech  { font-size: 10px; color: #60a5fa; font-weight: 600; margin-bottom: 5px; }
+    .pop-addr  { font-size: 9px; color: #64748b; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+
+<div id="topbar">
+  <span id="topbar-title">📍 Technician Map — Today</span>
+  <div id="topbar-stats">
+    <div class="tstat"><div class="tstat-val c-dispatched" id="stat-dispatched">–</div><div class="tstat-lbl">Dispatched</div></div>
+    <div class="tstat"><div class="tstat-val c-inprogress" id="stat-inprogress">–</div><div class="tstat-lbl">In Progress</div></div>
+    <div class="tstat"><div class="tstat-val c-completed"  id="stat-completed">–</div><div class="tstat-lbl">Completed</div></div>
+  </div>
+  <span id="topbar-date"></span>
+  <button id="refresh-btn" onclick="loadData()">↻ Refresh</button>
+</div>
+
+<div id="main">
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <div id="loading-text">Loading appointments...</div>
+  </div>
+  <div id="error-banner"></div>
+  <div id="map"></div>
+  <div id="sidebar">
+    <div id="sb-header">Field Technicians</div>
+    <div id="sb-list"><div class="empty-msg">Loading...</div></div>
+    <div id="sb-legend">
+      <div class="leg-item"><div class="leg-dot" style="background:#fb923c"></div>Dispatched</div>
+      <div class="leg-item"><div class="leg-dot" style="background:#60a5fa"></div>In Progress</div>
+      <div class="leg-item"><div class="leg-dot" style="background:#4ade80"></div>Completed</div>
+      <div class="leg-item"><div class="leg-dot" style="background:#facc15"></div>Scheduled</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+
+var CONFIG = {
+  // Token and org/app are handled by the Cloudflare Worker proxy
+  // Only the report name and field names are needed here
+  zohoReport : 'Service_Appointments_Report',
+  defaultLat : 36.1699,
+  defaultLng : -115.1398,
+  fields: {
+    tech     : 'Technician_Name',
+    status   : 'Status',
+    title    : 'Job_Title',
+    customer : 'Customer_Name',
+    address  : 'Service_Address',
+    city     : 'City',
+    state    : 'State',
+    zip      : 'Zip',
+    date     : 'Appointment_Date'
+  }
+};
+
+var leafletMap, markerLayer, markerIndex = {}, appointments = [];
+var AVATAR_COLORS = ['#3b82f6','#8b5cf6','#ec4899','#14b8a6','#f59e0b','#ef4444','#10b981','#6366f1'];
+var techColorMap = {}, colorIdx = 0;
+
+function techColor(n) {
+  if (!techColorMap[n]) { techColorMap[n] = AVATAR_COLORS[colorIdx % AVATAR_COLORS.length]; colorIdx++; }
+  return techColorMap[n];
+}
+function statusKey(s) {
+  if (!s) return 'scheduled';
+  s = s.toLowerCase();
+  if (s.indexOf('progress') > -1) return 'inprogress';
+  if (s.indexOf('dispatch') > -1) return 'dispatched';
+  if (s.indexOf('complet')  > -1) return 'completed';
+  return 'scheduled';
+}
+var SC = { dispatched:'#fb923c', inprogress:'#60a5fa', completed:'#4ade80', scheduled:'#facc15' };
+var SB = { dispatched:'b-dispatched', inprogress:'b-inprogress', completed:'b-completed', scheduled:'b-scheduled' };
+
+function todayZoho() {
+  var d=new Date(), dd=String(d.getDate()).padStart(2,'0');
+  var mm=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()];
+  return dd+'-'+mm+'-'+d.getFullYear();
+}
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function setLoading(v) { document.getElementById('loading-overlay').style.display = v?'flex':'none'; }
+function showError(m) {
+  var el=document.getElementById('error-banner');
+  el.textContent='⚠ '+m; el.style.display='block';
+  setTimeout(function(){el.style.display='none';},8000);
+}
+
+function initMap() {
+  leafletMap = L.map('map').setView([CONFIG.defaultLat, CONFIG.defaultLng], 11);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors', maxZoom: 19
+  }).addTo(leafletMap);
+  markerLayer = L.layerGroup().addTo(leafletMap);
+  document.getElementById('topbar-date').textContent = new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  loadData();
+}
+
+function loadData() {
+  setLoading(true);
+  document.getElementById('refresh-btn').disabled = true;
+  markerLayer.clearLayers();
+  markerIndex = {}; techColorMap = {}; colorIdx = 0;
+
+  var criteria = encodeURIComponent(CONFIG.fields.date+'=="'+todayZoho()+'"');
+  var url = 'https://zoho-creator-proxy.mollymolly702775.workers.dev/?report='+CONFIG.zohoReport+'&criteria='+criteria+'&max_records=200';
+
+  fetch(url, { headers: { 'Accept':'application/json' } })
+    .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status+' — token may have expired'); return r.json(); })
+    .then(function(data){
+      appointments = (data && data.data) ? data.data : [];
+      updateStats(); renderSidebar(); geocodeAndPlot();
+    })
+    .catch(function(err){ showError(err.message); setLoading(false); document.getElementById('refresh-btn').disabled=false; });
+}
+
+function updateStats() {
+  var c={dispatched:0,inprogress:0,completed:0};
+  appointments.forEach(function(a){ var k=statusKey(a[CONFIG.fields.status]); if(c[k]!==undefined) c[k]++; });
+  document.getElementById('stat-dispatched').textContent=c.dispatched;
+  document.getElementById('stat-inprogress').textContent=c.inprogress;
+  document.getElementById('stat-completed').textContent=c.completed;
+}
+
+function renderSidebar() {
+  var f=CONFIG.fields, techOrder=[], techMap={};
+  appointments.forEach(function(a){
+    var t=a[f.tech]||'Unassigned';
+    if(!techMap[t]){techMap[t]=[];techOrder.push(t);}
+    techMap[t].push(a);
+  });
+  document.getElementById('sb-header').textContent='Field Technicians ('+techOrder.length+')';
+  var list=document.getElementById('sb-list');
+  if(techOrder.length===0){list.innerHTML='<div class="empty-msg">No appointments today.</div>';return;}
+  list.innerHTML='';
+  techOrder.forEach(function(tn,ti){
+    var jobs=techMap[tn], done=jobs.filter(function(j){return statusKey(j[f.status])==='completed';}).length;
+    var color=techColor(tn), parts=tn.split(' ');
+    var ini=parts.length>=2?(parts[0][0]+parts[parts.length-1][0]).toUpperCase():(parts[0][0]||'?').toUpperCase();
+    var card=document.createElement('div');
+    card.className='tech-card'+(ti===0?' open':'');
+    var jh='';
+    jobs.forEach(function(apt){
+      var id=apt.ID||'', title=apt[f.title]||'Untitled Job', cust=apt[f.customer]||'';
+      var addr=[apt[f.address],apt[f.city],apt[f.state]].filter(Boolean).join(', ');
+      var stat=apt[f.status]||'Scheduled', sk=statusKey(stat);
+      jh+='<div class="job-row s-'+sk+'" onclick="focusJob(\''+id+'\')">'
+        +'<div class="job-title">'+esc(title)+'</div>'
+        +(cust?'<div class="job-cust">'+esc(cust)+'</div>':'')
+        +(addr?'<div class="job-addr">📍 '+esc(addr)+'</div>':'')
+        +'<span class="badge '+SB[sk]+'">'+esc(stat)+'</span></div>';
+    });
+    card.innerHTML='<div class="tech-hdr" onclick="this.parentElement.classList.toggle(\'open\')">'
+      +'<div class="tech-avatar" style="background:'+color+'">'+ini+'</div>'
+      +'<span class="tech-name">'+esc(tn)+'</span>'
+      +'<span class="tech-count">'+done+'/'+jobs.length+'</span>'
+      +'<span class="tech-chevron">▼</span></div>'
+      +'<div class="tech-jobs">'+jh+'</div>';
+    list.appendChild(card);
+  });
+}
+
+function geocodeAndPlot() {
+  var f=CONFIG.fields;
+  var queue=appointments.filter(function(a){return a[f.address];});
+  var bounds=[], idx=0;
+
+  function next(){
+    if(idx>=queue.length){
+      setLoading(false);
+      document.getElementById('refresh-btn').disabled=false;
+      if(bounds.length>0) leafletMap.fitBounds(bounds,{padding:[40,40]});
+      return;
+    }
+    var apt=queue[idx++];
+    var id=apt.ID||String(idx);
+    var fullAddr=[apt[f.address],apt[f.city],apt[f.state],apt[f.zip]].filter(Boolean).join(', ');
+    var status=apt[f.status]||'', title=apt[f.title]||'Untitled', cust=apt[f.customer]||'', tech=apt[f.tech]||'Unassigned';
+
+    fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(fullAddr),
+      {headers:{'User-Agent':'SmithsHVACPortal/1.0'}})
+      .then(function(r){return r.json();})
+      .then(function(res){
+        if(res&&res[0]){
+          // Fuzz coordinates ~300m radius for customer privacy
+          var fuzz = 0.003;
+          var lat=parseFloat(res[0].lat) + (Math.random()-0.5)*fuzz*2;
+          var lng=parseFloat(res[0].lon) + (Math.random()-0.5)*fuzz*2;
+          var sk=statusKey(status), pin=SC[sk]||'#94a3b8', ring=techColor(tech);
+          var m=L.circleMarker([lat,lng],{radius:10,fillColor:pin,fillOpacity:1,color:ring,weight:3});
+          m.bindPopup('<div class="pop-title">'+esc(title)+'</div>'
+            +(cust?'<div class="pop-cust">'+esc(cust)+'</div>':'')
+            +'<div class="pop-tech">👷 '+esc(tech)+'</div>'
+            +(fullAddr?'<div class="pop-addr">📍 '+esc(fullAddr)+'</div>':'')
+            +'<span style="font-size:9px;font-weight:700;padding:2px 8px;border-radius:8px;background:rgba(255,255,255,0.1);color:'+pin+';text-transform:uppercase;">'+esc(status||'Scheduled')+'</span>');
+          m.addTo(markerLayer);
+          markerIndex[id]=m;
+          bounds.push([lat,lng]);
+        }
+        setTimeout(next,1100); // Nominatim rate limit: 1 req/sec
+      })
+      .catch(function(){setTimeout(next,1100);});
+  }
+
+  if(queue.length===0){setLoading(false);document.getElementById('refresh-btn').disabled=false;}
+  else next();
+}
+
+function focusJob(id){
+  var m=markerIndex[id];
+  if(m){leafletMap.setView(m.getLatLng(),15);m.openPopup();}
+}
+
+window.addEventListener('load', initMap);
+</script>
+</body>
+</html>
